@@ -1,0 +1,12 @@
+# Configuration file for trolld and user space applications that talk to it
+# via the fifo
+#
+# password is the password used by trolld to authenticate fifo messages
+# interface is the outside interface (not the internet interface)
+# fifoname is the path and name to the fifo used to communicate with trolld
+# logfile is where trolld writes its log info
+[trolld]
+password  = MakeAHardPassWordHere
+interface = eth0
+fifoname  = /tmp/trolld.fifo
+logfile   = /var/log/trolld.log

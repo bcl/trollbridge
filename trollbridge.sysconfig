@@ -1,0 +1,91 @@
+#
+# ExternalDevice - Required if and only if NoCatAuth can't figure it out
+#   from looking at your routing tables and picking the interface
+#   that carries the default route. Must be set to the interface
+#   connected to the Internet. Usually 'eth0' or 'eth1'
+#   under Linux, or maybe even 'ppp0' if you're running
+#   PPP or PPPoE.
+#
+ExternalDevice="eth1"
+
+##
+# InternalDevice - Required.
+#   Must be set to the interface connected to your local network, normally
+#   your wireless card. In Linux, some wireless devices are named 'wvlan0'
+#   or 'wlan0' rather than 'ethX'.
+#
+InternalDevice="eth0"
+
+##
+# LocalNetwork - Required. Must be set to the network
+#   address and net mask of your internal network. You
+#   can use the number of bits in the netmask (e.g. /16, /24, etc.)
+#   or the full x.x.x.x specification.
+#
+LocalNetwork="192.168.0.0/24"
+
+##
+# DNSAddr - Optional. *If* you choose not to run DNS on your internal network,
+#   specify the address(es) of one or more domain name server on the Internet
+#   that wireless clients can use to get out. Should be the same DNS that your
+#   DHCP server hands out.
+#
+DNSAddr="192.168.0.2"
+
+##
+# AllowedWebHosts - Optional.  List any domains that you would like to
+#   allow web access (TCP port 80 and 443) BEFORE logging in (this is the
+#   pre-'skip' stage, so be careful about what you allow.)
+#
+AllowedWebHosts="192.168.0.2"
+
+##
+# RouteOnly - Required only if you DO NOT want your gateway to act as a NAT. 
+#   Uncomment this only if you're running a strictly routed network, and
+#   don't need the gateway to enable NAT for you.
+#
+# RouteOnly=1
+
+##
+# MembersOnly - Optional.  Uncomment this if you want to disable public
+#   access (i.e. unauthenticated 'skip' button access).  You'll also want to
+#   point AuthServiceURL somewhere that doesn't include a skip button (like
+#   at your own Auth server.)
+#
+# MembersOnly=1
+
+##
+# IncludePorts - Optional.  Specify TCP ports to allow access to when 
+#   public class users login.  All others will be denied.
+#
+#   For a list of common services and their respective port numbers, see 
+#   your /etc/services file. Depending on your firewall, you might even
+#   be able to specify said services here, instead of using port numbers.
+#
+IncludePorts="22 80 443 993 995 6666 6667 8090"
+
+##
+# ExcludePorts - Optional.  Specify TCP ports to denied access to when
+#   public class users login.  All others will be allowed.
+#
+#   Note that you should use either IncludePorts or ExcludePorts, but not
+#   both.  If neither is specified, access is granted to all ports to
+#   public class users.
+#
+#   You should *always* exclude port 25, unless you want to run an portal
+#   for wanton spam sending. Users should have their own way of sending
+#   mail. It sucks, but that's the way it is. Comment this out *only if*
+#   you're using IncludePorts instead.
+#
+# ExcludePorts 23 25 111
+#
+#ExcludePorts="25 110 143"
+
+##
+# GatewayPort - The TCP port to bind the gateway 
+#   service to. 5280 is de-facto standard for NoCatAuth.
+#   Change this only if you absolutely need to.
+#
+GatewayPort=5280
+
+### Fin!

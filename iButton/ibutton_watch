@@ -1,0 +1,127 @@
+#!/usr/bin/env python
+
+# iButtond v0.0.1
+# Copyright 2004 by Brian C. Lane <bcl@brianlane.com>
+# All Rights Reserved
+#
+# This program is free software; you can redistribute it and/or modify it
+# under the terms of the GNU General Public License as published by the Free
+# Software Foundation; either version 2 of the License, or (at your option)
+# any later version.
+#
+# This program is distributed in the hope that it will be useful, but WITHOUT
+# ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+# FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+# more details.
+#
+# You should have received a copy of the GNU General Public License along
+# with this program; if not, write to the Free Software Foundation, Inc.,
+# 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA
+#
+# ------------------------------------------------------------------------
+# Watch for devices to come and go and print their serial numbers.
+# =============================[ HISTORY ]================================
+# 04/09/2004   Starting this module
+# bcl
+# ------------------------------------------------------------------------
+
+import os, sys, string, time, ConfigParser
+
+try:
+    import serial
+except ImportError:
+    print """
+          Error importing the serial library. You need to make sure 
+          that it is properly installed.
+          """
+    sys.exit(-1)
+
+config_locations = ['./ibuttond.etc','/etc/ibuttond','/usr/local/etc/ibuttond']
+
+config = ConfigParser.ConfigParser()
+config.add_section("ibuttond")
+config.read( config_locations )
+
+try:
+    password  = config.get("ibuttond","password")
+    interface = config.get("ibuttond","interface")
+    fifoname  = config.get("ibuttond","fifoname")
+    logfile   = config.get("ibuttond","logfile")
+    port      = config.get("ibuttond","port")
+    dbname    = config.get("ibuttond","dbname")
+except ConfigParser.NoOptionError:
+    print "Error, missing option in the config file"
+    sys.exit(-1)
+
+
+# -------------------------------------------------------
+# iButton code goes here
+# -------------------------------------------------------
+def reverse_serial( serial_number ):
+    # Reverse the byte order of the serial number so that the family code
+    # comes first and checksum comes last
+    # The iButtonLink returns the serial number in reverse order when a
+    # find/next scan is done
+    new_serial = ""
+    for i in range(0,len(serial_number)/2):
+        new_serial = new_serial +serial_number[-2:]
+        serial_number = serial_number[:-2]
+        
+    return new_serial
+
+
+
+
+# ==================================
+# Main Code Starts Here
+# ==================================
+
+# Connect to the iButtonLink adapter and make sure it is working
+ser = serial.Serial( port, 9600, timeout = 0.2 )
+ser.setRTS(1)
+ser.setDTR(1)
+ser.sendBreak()
+ser.write(' ')
+version = ser.readline()
+print "Talking to iButtonLink : %s" % (version) 
+
+# Change the baudrate to 19200
+ser.write(',')
+time.sleep(0.5)
+ser.baudrate=19200
+
+# Make sure the switch went ok
+try:
+    ser.write(' ')
+    new_version = ser.readline()
+
+    if new_version != version:
+        print "Error talking to Link after baudrate change: %s" % (new_version)
+        ser.close()
+        sys.exit(-1)
+except:
+    print "Something went wrong with baudrate switch"
+    sys.exit(-1)
+
+# Put the iButtonLink into scanning mode and watch for arriving and departing
+# iButtons
+ser.write('r')
+ser.write('$')
+
+# Process input from the ibuttonLink
+while 1:
+    line = ser.readline()
+    if len(line) == 0: continue
+
+    if line[0] == '!':
+        # iButton arrival or departure
+        serial = line[2:-2]
+
+        print "Arrive: %s" % (serial)
+
+    elif line[0] == '?':
+        serial = line[2:-2]
+
+        print "Depart: %s" % (serial)
+
+# Never gets here

@@ -1,0 +1,95 @@
+#!/bin/env python
+
+# ------------------------------------------------------------------------
+# iButton_ctl v0.0.1
+# Copyright 2004 by Brian C. Lane <bcl@brianlane.com>
+# All Rights Reserved
+#
+# This program is free software; you can redistribute it and/or modify it
+# under the terms of the GNU General Public License as published by the Free
+# Software Foundation; either version 2 of the License, or (at your option)
+# any later version.
+#
+# This program is distributed in the hope that it will be useful, but WITHOUT
+# ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+# FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+# more details.
+#
+# You should have received a copy of the GNU General Public License along
+# with this program; if not, write to the Free Software Foundation, Inc.,
+# 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA
+#
+# ------------------------------------------------------------------------
+# This utility adds and deletes iButton serial number to MAC address 
+# mappings to the ibutton authorization database
+# =============================[ HISTORY ]================================
+# 04/09/2004   Starting this module
+# bcl          One potential problem is modifying the database while
+#              something else is accessing it.
+# ------------------------------------------------------------------------
+
+import os, sys, string, stat, signal, time, ConfigParser, anydbm
+
+config_locations = ['./ibuttond.etc','/etc/ibuttond','/usr/local/etc/ibuttond']
+
+config = ConfigParser.ConfigParser()
+config.add_section("ibuttond")
+config.read( config_locations )
+password  = config.get("ibuttond","password")
+interface = config.get("ibuttond","interface")
+fifoname  = config.get("ibuttond","fifoname")
+logfile   = config.get("ibuttond","logfile")
+port      = config.get("ibuttond","port")
+dbname    = config.get("ibuttond","dbname")
+
+
+# Check the passed arguments
+if (len(sys.argv) == 1) or ((len(sys.argv) != 4) and (sys.argv[1] != "list")):
+    print """
+Usage: <add|del|list> <iButton Serial> <MAC>
+       iButtonSerial   Serial number from an iButton
+       MAC             Colon seperated MAC address of user's NIC
+       list doesn't require any additional arguments
+          """
+    sys.exit(-1)
+
+
+# Check the iButton checksum
+
+
+# Check the MAC address format
+
+
+# Open the database
+try:
+    dbfile = anydbm.open( dbname, 'c' )
+except:
+    print "Error opening anydbm file %s" % (dbname )
+    sys.exit(-1)
+
+if sys.argv[1] == 'add':
+    if dbfile.has_key(sys.argv[2]):
+        print "%s is already tied to %s" % (sys.argv[2], dbfile[sys.argv[2]])
+        sys.exit(-1)
+
+    # Add the iButton -> MAC mapping to the database
+    dbfile[sys.argv[2]] = sys.argv[3]
+
+elif sys.argv[1] == 'del':
+    if not dbfile.has_key(sys.argv[2]):
+        print "%s is not in the database" % (sys.argv[2])
+        sys.exit(-1)
+
+    # Remove the iButton from the database
+    del dbfile[sys.argv[2]]
+
+elif sys.argv[1] == 'list':
+    for key in dbfile.keys():
+        print "%s -> %s" % (key,dbfile[key])
+
+else:
+    print "Unknown command: %s" % (sys.argv[1])
+    sys.exit(-1)
+
+# Close the anydbm database access?
+

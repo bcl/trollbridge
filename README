@@ -1,0 +1,163 @@
+TrollBridge Network Authentication
+v0.6.0
+Copyright 2004 by Brian C. Lane <bcl@brianlane.com>
+All Rights Reserved
+
+
+What Is TrollBridge?
+--------------------
+TrollBridge is a set of scripts that allows you to capture unauthorized
+network access and authenticate it before the client is allowed to pass
+through the gateway. It is based on the firewall script from NoCatSplash,
+with a different way of processing captured sessions.
+
+It allows you to setup authorization on your wireless (or even wired,
+TrollBridge doesn't care what kind of client is using it) network, creating
+a HotSpot for your business, school or home.
+
+TrollBridge is a set of tools that allow you to create a custom
+authorizations system. It takes a little bit of work to get it installed
+(hence no configure/install script or rpm). In its basic form it does no
+authentication, it just displays a login screen and accepts anything that
+the client inputs.
+
+
+How Does It Work?
+-----------------
+A new set of iptables rules is installed that totally locks out access to
+the internet interface from the outside interface. This rule set redirects
+incoming web requsts from their original destination to port 5280 on the
+TrollBridge machine.
+
+An Apache virtual host listening on 5280 then redirects the client to a
+login screen, while saving the original destination.
+
+The login screen authorizes the client and adds the client's IP address to
+the iptables rules and redirects the client to their original destination.
+
+
+How Do I Install It?
+--------------------
+TrollBridge requires some external programs in order to work properly. I
+will not go into details on their setup, except where it specifically
+relates to TrollBridge.
+
+
+Hardware
+The hardware that I am running my demo system on has 2 ethernet interfaces.
+One is connected to my home lan (which is then connected to the internet).
+The other interface is connected to the switch on a Netgear wireless router.
+
+
+Wireless Router
+The router has its DHCP server turned off. It also has ESSID broadcast
+turned off to slightly hide its presence. I have left its IP address set to
+the default (when I tried to change it to something in the 10.x.x.x range, 
+everything broke so I took the path of least resistance and left it at its
+default). Don't forget to change the default admin password on the wireless
+device!
+
+
+DHCP
+The TrollBridge system should have a DHCP server setup on the outside
+network interface. Setup for dhcpd is fairly simple, modify the default
+dhcpd.conf file and start up the service. See if your clients can get an IP
+address.
+
+On my system I also run DNS on the same system, so the dhcp server points
+the clients to the DNS service. I have about 100 names for the IPs that I
+serve up, just for fun.
+
+
+DNS
+I am using Bind 9, with a local top level domain, but you should be able to
+get away with just using a caching server, as it is configured by default.
+
+
+Apache
+Here's where the first customization comes in. Take a look at the file
+'httpd.conf' included in this package. You need to add this to your Apache
+configuration so that it will redirect the captured session to your
+TrollBridge machine and include the original target.
+
+Change the IP address in the redirect to the IP address of your outside
+interface (I recommend using IPs instead of names, just in case DNS isn't
+working right for that client).
+
+Copy the skeleton.cgi script to wherever you point the 5280 redirect
+towards. I recomend using the SSL section of the server in order to protect
+any login details that are sent by the client.
+
+TrollBridge service
+The trollbridge service runs at bootup from the /etc/init.d/ directory. It
+turns off any iptables that have been previously setup and runs the trolld
+process which handles adding and removing clients from the iptables rules.
+This is the only part of TrollBridge that must run as root. It does a
+minimum of tasks to help ensure that it is as secure as possible.
+
+1. Turn off current iptables startup script:
+   chkconfig iptables off
+   service iptables stop
+
+2. Install the trollbridge startup script in /etc/init.d/
+   Copy 'trollbridge.sysconfig' to /etc/sysconfig/trollbridge and edit it
+
+   This file controls the iptables filter setup and is basically the same as
+   the NoCatSplash config file that it is based on. The file is well
+   commented, read through it and fill in the correct values for your setup.
+   I recommend using IP addresses for all system references since you cannot
+   guarentee that the client will have its DNS working correctly.
+
+   If you change the GatewayPort you will need to make sure it is also
+   changed in the Apache httpd.conf redirect additions.
+
+   Copy the 'trollbridge' script to /etc/init.d/ and activate it:
+   chkconfig trollbridge on
+   service trollbridge start
+
+TrollBridge should now be up and running. Try accessing an internet webpage
+from a client system. It should get redirected to the example TrollBridge
+capture page and when you click on 'Login' it should redirect to the
+original site.
+
+
+
+Where Has It Been Deployed?
+---------------------------
+My house. And it will be demoed at the KPLUG table at Linux Fest NW 2004.
+
+
+Troubleshooting
+---------------
+Trouble? There should be no trouble :)
+
+Here are some basic things to confirm that things are working:
+
+1. Can your client get an IP address from the DHCP server?
+
+2. Did they get a DNS server address as well?
+
+3. Can clients get to the default page for the TrollBridge web server?
+   Access to the server's webpage is not blocked and clients do not need to 
+   authenticate in order to view it.
+
+4. Can the client ssh to the TrollBridge server? SSH is open and should work
+   just fine.
+
+5. Is the webserver redirecting correctly? Check the server log files and 
+   possibly turn on the RedirectLog in the httpd.conf additions for port
+   5280
+
+6. Is trolld processing the add message? Check the /var/log/trolld.log file
+   for errors.
+
+7. Look at the output of iptables -L -n, you should see your clients who
+   have been authorized listed in the 'tb' section.
+
+You can use the troll_cmd script to manually add and delete IP addresses
+from the authorized client list. Its usage is 'troll-cmd add IP' and
+'troll-cmd del IP'
+
+If you find bugs, add features or have questions please feel free to email
+me at bcl@brianlane.com
+

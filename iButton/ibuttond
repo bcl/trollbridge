@@ -1,0 +1,239 @@
+#!/usr/bin/env python
+
+# iButtond v0.0.1
+# Copyright 2004 by Brian C. Lane <bcl@brianlane.com>
+# All Rights Reserved
+#
+# This program is free software; you can redistribute it and/or modify it
+# under the terms of the GNU General Public License as published by the Free
+# Software Foundation; either version 2 of the License, or (at your option)
+# any later version.
+#
+# This program is distributed in the hope that it will be useful, but WITHOUT
+# ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+# FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+# more details.
+#
+# You should have received a copy of the GNU General Public License along
+# with this program; if not, write to the Free Software Foundation, Inc.,
+# 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA
+#
+# ------------------------------------------------------------------------
+# This daemon watches the 1-wire network for iButtons to be added or 
+# removed from the bus. It then looks up the serial number in a small text
+# database and adds the indicated MAC to the list of allowed hosts.
+#
+# The client must already have an IP served by DHCP and must be in the ARP
+# table.
+#
+# =============================[ HISTORY ]================================
+# 04/08/2004   Starting this module
+# bcl
+#
+# 04/09/2004   Serial numbers, when displayed or saved will be in the 
+# bcl          order that they are discovered. Reverse is only used to
+#              address them. This matches what is printed on the can
+#              of the Thermochron iButtons.
+# ------------------------------------------------------------------------
+
+import os, sys, string, stat, signal, time, ConfigParser, anydbm
+
+try:
+    import serial
+except ImportError:
+    print """
+          Error importing the serial library. You need to make sure 
+          that it is properly installed.
+          """
+    sys.exit(-1)
+
+
+config_locations = ['./ibuttond.etc','/etc/ibuttond','/usr/local/etc/ibuttond']
+
+config = ConfigParser.ConfigParser()
+config.add_section("ibuttond")
+config.read( config_locations )
+password  = config.get("ibuttond","password")
+interface = config.get("ibuttond","interface")
+fifoname  = config.get("ibuttond","fifoname")
+logfile   = config.get("ibuttond","logfile")
+port      = config.get("ibuttond","port")
+dbname    = config.get("ibuttond","dbname")
+
+
+# Open the log and redirect stdout and stderr to it
+#log = open(logfile, "a" )
+#sys.stdout = log
+#sys.stderr = log
+
+
+# Open the database
+try:
+    dbfile = anydbm.open( dbname )
+except:
+    print "Error opening anydbm file %s" % (dbname )
+    sys.exit(-1)
+
+
+def log_message( message ):
+	print time.ctime()+" "+message
+	sys.stdout.flush()
+
+# Get the MAC of the requesting IP from /proc/net/arp
+def get_mac( ip, iface ):
+        # Lookup the MAC address of the connecting IP in /proc/net/arp
+        arp = open( "/proc/net/arp", "r" )
+        lines = arp.readlines()
+        arp.close()
+
+        for line in lines:
+                arp = string.split(line)
+                if len(arp) == 6:
+                        if (arp[0] == ip) and (arp[5] == iface):
+                                return arp[3]
+
+        return 0
+
+
+# Get the IP of the MAC from /proc/net/arp
+def get_ip( mac, iface ):
+    # Lookup the MAC address of the connecting IP in /proc/net/arp
+    arp = open( "/proc/net/arp", "r" )
+    lines = arp.readlines()
+    arp.close()
+
+    # Search the arp table for the MAC
+    for line in lines:
+        arp = string.split(line)
+        if len(arp) == 6:
+            if (arp[3] == mac) and (arp[5] == iface):
+                return arp[0]
+
+    return 0
+
+# Tell trolld to permit this ip
+def trolld_cmd( command, ip):
+        permit = "%s;%s %s public" % (password, command, ip)
+        pipeout = open( fifoname, "w" )
+        pipeout.write(permit)
+        pipeout.close
+
+def make_daemon():
+	if os.getppid() != 1:  # we're already a daemon (started from init)
+		if hasattr(signal, 'SIGTTOU'):
+			signal.signal(signal.SIGTTOU, signal.SIG_IGN)
+		if hasattr(signal, 'SIGTTIN'):
+			signal.signal(signal.SIGTTIN, signal.SIG_IGN)
+		if hasattr(signal, 'SIGTSTP'):
+			signal.signal(signal.SIGTSTP, signal.SIG_IGN)
+		pid = os.fork()
+		if pid:
+			sys.exit(0)
+		os.setpgrp()
+		signal.signal(signal.SIGHUP, signal.SIG_IGN)
+	sys.stdin.close()
+# I use these to log info
+#	sys.stdout.close()
+#	sys.stderr.close()
+	os.chdir(os.sep)
+	os.umask(0)
+	signal.signal(signal.SIGCLD, signal.SIG_IGN)
+
+# -------------------------------------------------------
+# iButton code goes here
+# -------------------------------------------------------
+def reverse_serial( serial_number ):
+    # Reverse the byte order of the serial number so that the family code
+    # comes first and checksum comes last
+    # The iButtonLink returns the serial number in reverse order when a
+    # find/next scan is done
+    new_serial = ""
+    for i in range(0,len(serial_number)/2):
+        new_serial = new_serial +serial_number[-2:]
+        serial_number = serial_number[:-2]
+        
+    return new_serial
+
+
+
+
+# ==================================
+# Main Code Starts Here
+# ==================================
+
+log_message( "Startup" )
+
+# Connect to the iButtonLink adapter and make sure it is working
+ser = serial.Serial( port, 9600, timeout = 0.2 )
+ser.setRTS(1)
+ser.setDTR(1)
+ser.sendBreak()
+ser.write(' ')
+version = ser.readline()
+log_message( "Talking to iButtonLink : %s" % (version) )
+
+# Change the baudrate to 19200
+ser.write(',')
+time.sleep(0.5)
+ser.baudrate=19200
+
+# Make sure the switch went ok
+try:
+    ser.write(' ')
+    new_version = ser.readline()
+
+    if new_version != version:
+        print "Error talking to Link after baudrate change: %s" % (new_version)
+        ser.close()
+        sys.exit(-1)
+except:
+    print "Something went wrong with baudrate switch"
+    sys.exit(-1)
+
+# Turn us into a daemon
+#make_daemon()
+
+# Create a lockfile if one is passed on the command line
+if len(sys.argv) > 1:
+	pidfile = open(sys.argv[1], "w")
+	pidfile.write( "%s\n" % (os.getpid()) )
+	pidfile.close()
+
+
+# Put the iButtonLink into scanning mode and watch for arriving and departing
+# iButtons
+ser.write('r')
+ser.write('$')
+
+# Process input from the ibuttonLink
+while 1:
+    line = ser.readline()
+    if len(line) == 0: continue
+
+    if (line[0] == '!') or (line[0] == '?'):
+        # iButton arrival or departure
+        serial = line[2:-2]
+
+        # Look up the serial number in a dbm file (or hash to mac from a file)
+        if dbfile.has_key(serial):
+            mac = dbfile[serial]
+
+            # Look up the mac in the arp table and get the IP
+            ip = get_ip(mac, interface)
+
+            if ip == 0: continue
+
+            if line[0] == '!':
+                command = 'allow'
+            else:
+                command = 'deny'
+
+            log_message( "%s %s" % (command, serial) )
+
+            # Send the IP to the trolld daemon to deny access
+            trolld_cmd( command, ip )
+        else:
+            log_message( "Unknown iButton: %s" % (serial) )
+
+# Never gets here
+

@@ -1,0 +1,8 @@
+# Configuration file for ibuttond
+[ibuttond]
+password  = HiOmDfi384Fptm
+fifoname  = /tmp/trolld.fifo
+interface = eth0
+logfile   = /var/log/ibuttond.log
+port      = /dev/ttyS0
+dbname    = ./ibuttond.auth

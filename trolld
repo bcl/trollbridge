@@ -1,0 +1,191 @@
+#!/usr/bin/env python
+
+# trolld v0.0.1
+# Copyright 2004 by Brian C. Lane <bcl@brianlane.com>
+# All Rights Reserved
+#
+# This program is free software; you can redistribute it and/or modify it
+# under the terms of the GNU General Public License as published by the Free
+# Software Foundation; either version 2 of the License, or (at your option)
+# any later version.
+#
+# This program is distributed in the hope that it will be useful, but WITHOUT
+# ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+# FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+# more details.
+#
+# You should have received a copy of the GNU General Public License along
+# with this program; if not, write to the Free Software Foundation, Inc.,
+# 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA
+#
+# ------------------------------------------------------------------------
+# Implement a simple pipe control over iptables entries for TrollBridge
+# Network Authentication Scripts. It checks for a password and a command
+# to send to iptables. It uses spawnv so that a rogue request cannot break
+# out into a shell of its own.
+#
+# =============================[ HISTORY ]================================
+# 04/02/2004   Changing os.system call to os.execv call to prevent breaking
+# bcl          out of the shell. got it working, I think. Using spawnv.
+#              The test for a status doesn't always work, so its been
+#              disabled for now.
+#
+# 03/31/2004   Moving MAC lookup from the cgi into here.
+# bcl
+#
+# 03/28/2004   Adding daemon code and decent logging.
+# bcl          It also really ought to get password and fifoname from a
+#              common configuration file that can also be used by the
+#              CGI script.
+#              If a pid filename is passed as argv[1] then write the pid
+#              into it.
+#
+# 03/27/2004   Started this project.
+# bcl
+# ------------------------------------------------------------------------
+
+import os, sys, string, stat, signal, time, ConfigParser
+
+config_locations = ['/etc/trollbridge','/usr/local/etc/trollbridge']
+
+config = ConfigParser.ConfigParser()
+config.add_section("trolld")
+config.read( config_locations )
+password  = config.get("trolld","password")
+interface = config.get("trolld","interface")
+fifoname  = config.get("trolld","fifoname")
+logfile   = config.get("trolld","logfile")
+
+# This needs to come from a common config file
+#password = 'HiOmDfi384Fptm'
+#interface = 'eth0'
+#fifoname = '/tmp/trolld.fifo'
+#logfile = '/var/log/trolld.log'
+
+
+# Open the log and redirect stdout and stderr to it
+log = open(logfile, "a" )
+sys.stdout = log
+sys.stderr = log
+
+def log_message( message ):
+	print time.ctime()+" "+message
+	sys.stdout.flush()
+
+# Get the MAC of the requesting IP from /proc/net/arp
+def get_mac( ip, iface ):
+        # Lookup the MAC address of the connecting IP in /proc/net/arp
+        arp = open( "/proc/net/arp", "r" )
+        lines = arp.readlines()
+        arp.close()
+
+        for line in lines:
+                arp = string.split(line)
+                if len(arp) == 6:
+                        if (arp[0] == ip) and (arp[5] == iface):
+                                return arp[3]
+
+        return 0
+
+
+def make_daemon():
+	if os.getppid() != 1:  # we're already a daemon (started from init)
+		if hasattr(signal, 'SIGTTOU'):
+			signal.signal(signal.SIGTTOU, signal.SIG_IGN)
+		if hasattr(signal, 'SIGTTIN'):
+			signal.signal(signal.SIGTTIN, signal.SIG_IGN)
+		if hasattr(signal, 'SIGTSTP'):
+			signal.signal(signal.SIGTSTP, signal.SIG_IGN)
+		pid = os.fork()
+		if pid:
+			sys.exit(0)
+		os.setpgrp()
+		signal.signal(signal.SIGHUP, signal.SIG_IGN)
+	sys.stdin.close()
+# I use these to log info
+#	sys.stdout.close()
+#	sys.stderr.close()
+	os.chdir(os.sep)
+	os.umask(0)
+	signal.signal(signal.SIGCLD, signal.SIG_IGN)
+
+# Process a command line:  password;cmd mac ip class
+def exec_line( line ):
+	args = string.split( line, ';' )
+	if len(args) == 2:
+#		log_message( "password = " + args[0] )
+#		log_message( "command  = " + args[1] )
+
+		if password != args[0]: return
+
+		cmnd = string.split( args[1] )
+		if len(cmnd) == 3:
+			if cmnd[0] == 'permit':
+				command = '-A'
+			elif cmnd[0] == 'deny':
+				command = '-D'
+			else:
+				log_message( "Unknown command: %s" % (cmnd[0]) )
+				return
+
+			if cmnd[2] == 'owner':
+				mark = '1'
+			elif cmnd[2] == 'member':
+				mark = '2'
+			elif cmnd[2] == 'public':
+				mark = '3'
+                        else:
+				log_message( "Unknown class: %s" % (cmnd[2]) )
+
+			mac = get_mac( cmnd[1], interface )
+			outbound_cmd = ("iptables", "-t","mangle", command, "tb", "-m", "mac", "--mac-source", mac, "-s", cmnd[1], "-j", "MARK", "--set-mark", mark )
+			inbound_cmd =  ("iptables", "-t", "filter", command, "tb_in", "-d", cmnd[1], "-j", "ACCEPT" )
+
+#			print outbound_cmd
+#			print inbound_cmd
+#		        sys.stdout.flush()
+
+			pid = os.spawnv( os.P_NOWAIT, "/sbin/iptables",outbound_cmd)
+#			status = os.waitpid( pid, 0)
+#			if status != 0:
+#				log_message( "Error (%s) executing %s"%(status,outbound_cmd) )
+
+			pid = os.spawnv( os.P_NOWAIT, "/sbin/iptables",inbound_cmd)
+#			status = os.waitpid( pid, 0 )
+#			if status != 0:
+#				log_message( "Error (%s) executing %s"%(status,inbound_cmd) )
+
+
+# ==================================
+# Main Code Starts Here
+# ==================================
+
+# Create the FIFO (named pipe)
+if not os.path.exists(fifoname):
+	os.mkfifo(fifoname)
+
+# Make sure everyone can read/write to the fifo
+os.chmod(fifoname, 0666)
+
+# Turn us into a daemon
+make_daemon()
+
+log_message( "Startup" )
+
+# Create a lockfile if one is passed on the command line
+if len(sys.argv) > 1:
+	pidfile = open(sys.argv[1], "w")
+	pidfile.write( "%s\n" % (os.getpid()) )
+	pidfile.close()
+
+# Process input from the fifo
+while 1:
+	pipein = open(fifoname, 'r')
+	line = pipein.readline()
+	while line:
+		log_message( "Received - "+line )
+		exec_line( line )
+		line = pipein.readline()
+	pipein.close()
+
+# Never gets here

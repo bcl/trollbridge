@@ -1,0 +1,58 @@
+#!/usr/bin/env python
+#
+# TrollBridge Network Authentication
+# Copyright 2004 by Brian C. Lane <bcl@brianlane.com>
+# All Rights Reserved
+#
+# This program is free software; you can redistribute it and/or modify it
+# under the terms of the GNU General Public License as published by the Free
+# Software Foundation; either version 2 of the License, or (at your option)
+# any later version.
+#
+# This program is distributed in the hope that it will be useful, but WITHOUT
+# ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+# FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+# more details.
+#
+# You should have received a copy of the GNU General Public License along
+# with this program; if not, write to the Free Software Foundation, Inc.,
+# 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA
+#
+# ------------------------------------------------------------------------
+# Add or delete an IP address from the authorized users list
+# ------------------------------------------------------------------------
+import os, sys, string, ConfigParser
+
+config_locations = ['/etc/trollbridge','/usr/local/etc/trollbridge']
+
+config = ConfigParser.ConfigParser()
+config.add_section("trolld")
+config.read( config_locations )
+password  = config.get("trolld","password")
+interface = config.get("trolld","interface")
+fifoname  = config.get("trolld","fifoname") 
+
+def permit_client( ip ):
+	permit = password+";permit %s public" % (ip)
+	pipeout = open( fifoname, "w" )
+        pipeout.write(permit)
+	pipeout.close
+
+def deny_client( ip ):
+	permit = password+";deny %s public" % (ip)
+	pipeout = open( fifoname, "w" )
+        pipeout.write(permit)
+	pipeout.close
+
+
+# 
+if len(sys.argv) == 3:
+	if sys.argv[1] == 'add':
+		permit_client( sys.argv[2] )
+
+	if sys.argv[1] == 'del':
+		deny_client( sys.argv[2] )
+
+else:
+	print "Usage:  <add|del> <IP>"
+
